@@ -18,6 +18,9 @@ class Bunch(dict):
     
     def __setattr__(self, key, value):
         self.__setitem__(key, value)
+
+    def __delattr__(self, key):
+        self.__delitem__(key)
     
     def __dir__(self):
         names = dir({})
@@ -25,7 +28,7 @@ class Bunch(dict):
         return names
 
     def __repr__(self):
-        return "%s(%r)" % (type(self).__name__, self.copy())
+        return "%s(%r)" % (type(self).__name__, dict(self))
 
 
 class GlobalSettings(Bunch):
@@ -135,6 +138,41 @@ def import_local_settings(name=None, from_name=None):
 
 class Settings(Bunch):
 
+    def __contains__(self, name):
+        if "." not in name:
+            return super(Settings, self).__contains__(name)
+        else:
+            first = name[:name.index(".")]
+            return (super(Settings, self).__contains__(first) and
+                isinstance(self[first], Settings) and
+                name[len(first) + 1:] in self[first])
+
+    def __getitem__(self, name):
+        if "." not in name:
+            return super(Settings, self).__getitem__(name)
+        else:
+            setting = self
+            names = name.split(".")
+            for i in range(len(names)):
+                setting = dict.__getitem__(setting, n)
+                if not isinstance(setting, Settings):
+                    raise KeyError(".".join(names[:i + 1]))
+            return setting
+
+    def __setitem__(self, name, value):
+        if "." not in name:
+            super(Settings, self).__setitem__(name, value)
+        else:
+            names = name.split(".")
+            self[names[:-1]][names[-1]] = value
+
+    def __delitem__(self, name):
+        if "." not in name:
+            super(Settings, self).__delitem__(name)
+        else:
+            names = name.split(".")
+            del self[names[:-1]][names[-1]]
+
     def configure(self, obj):
         for k, v in self.items():
             if isinstance(v, Settings):
@@ -148,4 +186,3 @@ class Settings(Bunch):
                 self[k].merge(v)
             else:
                 self[k] = v
-
