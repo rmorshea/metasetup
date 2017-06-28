@@ -1,13 +1,14 @@
 import os 
 import sys
 from types import ModuleType
+from importlib import import_module
 from importlib.abc import MetaPathFinder, Loader
 from importlib.machinery import ModuleSpec
 from importlib.util import module_from_spec
 
 
 class Bunch(dict):
-    """A dict with attribute-access"""
+    """A dict with from_name-access"""
 
     def __getattr__(self, key):
         try:
@@ -27,24 +28,19 @@ class Bunch(dict):
         return "%s(%r)" % (type(self).__name__, self.copy())
 
 
-class Settings(Bunch):
+class GlobalSettings(Bunch):
 
     def __new__(cls, name=None, settings=None, parent=None):
-        self = super(Settings, cls).__new__(cls)
+        self = super(GlobalSettings, cls).__new__(cls)
 
         if name is not None:
 
-            if parent is None:
-                parent = sys.modules[__name__]
-                if not isinstance(parent, Settings):
-                    raise TypeError("The module %r must be a Settings "
-                        "object, not %r" % (__name__, parent))
-
+            parent = parent or GLOBAL_SETTINGS
             names = name.split(".")
 
             if len(names) > 1:
                 shortname = ".".join(names[:-1])
-                parent = Settings(shortname, parent=parent)
+                parent = GlobalSettings(shortname, parent=parent)
 
             if names[-1] in parent:
                 self = parent[names[-1]]
@@ -61,22 +57,15 @@ class Settings(Bunch):
         else:
             fullname = name
         object.__setattr__(self, "__name__", fullname)
-        super(Settings, self).__init__(settings or {})
+        super(GlobalSettings, self).__init__(settings or {})
 
     def __getitem__(self, name):
         if name in self:
-            return super(Settings, self).__getitem__(name)
+            return super(GlobalSettings, self).__getitem__(name)
         elif name.startswith("_") and name.endswith("_"):
             raise AttributeError("%r" % name)
         else:
-            return Settings(name, parent=self)
-
-    def configure(self, obj):
-        for k, v in self.items():
-            if isinstance(v, Settings):
-                v.configure(getattr(obj, k))
-            else:
-                setattr(obj, k, v)
+            return GlobalSettings(name, parent=self)
 
     def __repr__(self):
         return "%s(%r)" % (type(self).__name__, self.copy())
@@ -84,16 +73,14 @@ class Settings(Bunch):
     def __str__(self):
         return "%s(%r)" % (self.__name__ or type(self).__name__, self.copy())
 
-    @classmethod
-    def main(cls):
-        if not hasattr(cls, main):
-            cls._main = Settings()
-        else:
-            return cls._main
+    def localize(self):
+        return Settings({k : (v.localize()
+            if isinstance(v, GlobalSettings) else v)
+            for k, v in self.items()})
 
 
-class SettingsModule(ModuleType):
-    """A module whose attributes generate Settings objects when accessed"""
+class GlobalSettingsModule(ModuleType):
+    """A module whose from_names generate Settings objects when accessed"""
 
     def __init__(self, spec):
         self.__path__ = None
@@ -104,10 +91,10 @@ class SettingsModule(ModuleType):
 
     def __getattr__(self, name):
         package = self.__name__[len(self.__loader__.basename) + 1:]
-        return Settings(package + "." + name)
+        return GlobalSettings(package + "." + name)
 
 
-class SettingsImporter(Loader, MetaPathFinder):
+class GlobalSettingsImporter(Loader, MetaPathFinder):
 
     def __init__(self, basename):
         self.basename = basename
@@ -117,10 +104,48 @@ class SettingsImporter(Loader, MetaPathFinder):
             return ModuleSpec(fullname, self)
 
     def create_module(self, spec):
-        return SettingsModule(spec)
+        return GlobalSettingsModule(spec)
 
     def exec_module(self, module):
         pass
 
-sys.modules[__name__] = Settings()
-sys.meta_path.append(SettingsImporter("metasetup"))
+
+GLOBAL_SETTINGS = GlobalSettings()
+sys.meta_path.append(GlobalSettingsImporter("metasetup"))
+
+
+def import_global_settings(name=None, from_name=None, package=None):
+    if name is None:
+        module = GLOBAL_SETTINGS
+    else: 
+        if package is not None:
+            fullname = ".".join("metasetup", name, package)
+        else:
+            fullname = "metasetup." + name
+        module = import_module(fullname)
+    if from_name is not None:
+        return getattr(module, from_name)
+    else:
+        return module
+
+
+def import_local_settings(name=None, from_name=None):
+    return import_global_settings(name, from_name).localize()
+
+
+class Settings(Bunch):
+
+    def configure(self, obj):
+        for k, v in self.items():
+            if isinstance(v, Settings):
+                v.configure(getattr(obj, k))
+            else:
+                setattr(obj, k, v)
+
+    def merge(self, other):
+        for k, v in other.items():
+            if isinstance(v, Settings) and isinstance(self[k], Settings):
+                self[k].merge(v)
+            else:
+                self[k] = v
+
