@@ -1,26 +1,18 @@
-from .__global__ import import_global_settings, import_local_settings, Settings, GlobalSettings
+from ._metasetup import (import_global_settings, import_local_settings,
+    global_settings, local_settings, Settings, GlobalSettings)
 
-
-class MetaConfigurable(type):
-
-    def __init__(cls, name, bases, classdict):
-        cls.my_settings = import_local_settings(cls.__module__, cls.__name__)
-
-
-class Configurable(object, metaclass=MetaConfigurable):
+class Configurable(object):
 
     @classmethod
-    def sync_settings(cls):
+    def settings_mro(cls):
         for c in cls.mro():
-            if issubclass(c, Configurable):
-                c.my_settings = import_local_settings(c.__module__, c.__name__)
+            yield (c, local_settings(c.__module__, c.__name__))
 
     @classmethod
     def settings(cls):
         mine = Settings()
-        for c in reversed(cls.mro()):
-            if issubclass(c, Configurable):
-                mine.merge(c.my_settings)
+        for c, s in cls.settings_mro():
+            mine.merge(s)
         return mine
 
     def configure(self):

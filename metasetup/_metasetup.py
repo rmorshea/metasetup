@@ -38,7 +38,7 @@ class GlobalSettings(Bunch):
 
         if name is not None:
 
-            parent = parent or GLOBAL_SETTINGS
+            parent = parent or GLOBAL
             names = name.split(".")
 
             if len(names) > 1:
@@ -71,9 +71,6 @@ class GlobalSettings(Bunch):
             return GlobalSettings(name, parent=self)
 
     def __repr__(self):
-        return "%s(%r)" % (type(self).__name__, self.copy())
-
-    def __str__(self):
         return "%s(%r)" % (self.__name__ or type(self).__name__, self.copy())
 
     def localize(self):
@@ -91,16 +88,18 @@ class GlobalSettingsModule(ModuleType):
         self.__name__ = spec.name
         self.__loader__ = spec.loader
         self.__package__ = ".".join(spec.name.split(".")[:-1])
+        self._settings = GlobalSettings(self.__name__[len(self.__loader__.basename) + 1:])
 
     def __getattr__(self, name):
         package = self.__name__[len(self.__loader__.basename) + 1:]
-        return GlobalSettings(package + "." + name)
+        settings = GlobalSettings(package + "." + name)
+        setattr(self, name, settings)
+        return settings
 
 
 class GlobalSettingsImporter(Loader, MetaPathFinder):
 
-    def __init__(self, basename):
-        self.basename = basename
+    basename = "metasetup"
 
     def find_spec(self, fullname, path, target=None):
         if fullname.startswith(self.basename):
@@ -113,19 +112,22 @@ class GlobalSettingsImporter(Loader, MetaPathFinder):
         pass
 
 
-GLOBAL_SETTINGS = GlobalSettings()
-sys.meta_path.append(GlobalSettingsImporter("metasetup"))
+GLOBAL = GlobalSettings()
+sys.meta_path.append(GlobalSettingsImporter())
+
+
+def to_fullname(name, package=None):
+    if package is not None:
+        return ".".join((GlobalSettingsImporter.basename, package, name))
+    else:
+        return ".".join((GlobalSettingsImporter.basename, name))
 
 
 def import_global_settings(name=None, from_name=None, package=None):
     if name is None:
-        module = GLOBAL_SETTINGS
+        module = GLOBAL
     else: 
-        if package is not None:
-            fullname = ".".join("metasetup", name, package)
-        else:
-            fullname = "metasetup." + name
-        module = import_module(fullname)
+        module = import_module(to_fullname(name, package))
     if from_name is not None:
         return getattr(module, from_name)
     else:
@@ -134,6 +136,27 @@ def import_global_settings(name=None, from_name=None, package=None):
 
 def import_local_settings(name=None, from_name=None):
     return import_global_settings(name, from_name).localize()
+
+
+def global_settings(name=None, from_name=None, package=None):
+    if name is None:
+        return GLOBAL
+    elif to_fullname(name, package) in sys.modules:
+        module = import_global_settings(name, package=package)
+        if from_name is not None:
+            if hasattr(module, from_name):
+                return getattr(module, from_name)
+            else:
+                return None
+        else:
+            return module
+    else:
+        return None
+
+
+def local_settings(name=None, from_name=None, package=None):
+    settings = global_settings(name, from_name, package)
+    return Settings() if settings is None else settings.localize()
 
 
 class Settings(Bunch):
