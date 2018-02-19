@@ -75,9 +75,12 @@ which is run by ``python main.py`` and has the following contents:
 Under The Hood
 --------------
 
-In order to import settings, a ``SettingsImporter`` is appended to Python's `meta path`_. Every time a name not
-defined in ``metasetup/__init__.py`` is requested, the importer creates a ``SettingsModule``. The attributes of
-these modules contain ``Settings`` which can be modified, and used to initialize ``Configurable`` instances. All
-``Settings`` are stored globally, and accessible via ``metapath.import_settings()``.
+In order to import settings, a ``GlobalSettingsImporter`` is appended to Python's `meta path`_. Every time a name not
+defined in ``metasetup/__init__.py`` is requested, the importer creates a ``GlobalSettingsModule``. The attributes of
+these modules contain ``GlobalSettings`` which can be modified, and used to initialize ``Configurable`` instances.
+
+At this point, a key distinction is made between ```Settings`` and ``GlobalSettings`` where the former is a local image
+of the latter. In other words, changing ``Settings`` instances won't not change the ``GlobalSettings`` they represent.
+The two can be accessed via ``local_settings()`` and ``global_settings()`` respectively.
 
 .. _meta path: https://docs.python.org/library/sys.html#sys.meta_path

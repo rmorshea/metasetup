@@ -1,21 +1,21 @@
-from ._metasetup import (import_global_settings, import_local_settings,
-    global_settings, local_settings, Settings, GlobalSettings)
+from ._metasetup import global_settings, local_settings, Settings, ArgumentParser
+
 
 class Configurable(object):
 
     @classmethod
-    def settings_mro(cls):
-        for c in cls.mro():
-            yield (c, local_settings(c.__module__, c.__name__))
-
-    @classmethod
-    def settings(cls):
+    def settings(cls, **kwargs):
+        if kwargs.get("sync", False):
+            cls.sync_settings()
         mine = Settings()
-        for c, s in cls.settings_mro():
-            mine.merge(s)
+        for c in reversed(cls.mro()):
+            if issubclass(c, Configurable):
+                settings = local_settings(c.__module__, c.__name__)
+                mine.merge(settings)
         return mine
 
-    def configure(self):
-        settings = self.settings()
-        settings.configure(self)
+    def configure(self, **kwargs):
+        keys = kwargs.pop("keys", None)
+        settings = self.settings(**kwargs)
+        settings.configure(self, keys)
         return settings
